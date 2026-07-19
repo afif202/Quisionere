@@ -2,25 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
-
-const supabase = createClient();
 import { 
-  Heart, 
-  User, 
-  BookOpen, 
-  Wallet, 
-  Users, 
-  Smile, 
-  AlertTriangle, 
   ArrowRight, 
   ArrowLeft, 
-  CheckCircle2, 
   RotateCcw,
-  Sparkles,
-  ClipboardList,
-  ShieldAlert,
-  Download,
-  Info
+  Printer,
+  ChevronRight,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -46,11 +35,11 @@ const DEFAULT_QUESTIONS: Question[] = [
 ];
 
 const LIKERT_OPTIONS = [
-  { value: 1, label: 'Sangat Tidak Setuju', color: 'border-red-200 hover:bg-red-50 text-red-700 active:bg-red-100', activeClass: 'bg-red-500 text-white border-red-500' },
-  { value: 2, label: 'Tidak Setuju', color: 'border-orange-200 hover:bg-orange-50 text-orange-700 active:bg-orange-100', activeClass: 'bg-orange-500 text-white border-orange-500' },
-  { value: 3, label: 'Ragu-Ragu / Netral', color: 'border-gray-200 hover:bg-gray-50 text-gray-700 active:bg-gray-100', activeClass: 'bg-gray-500 text-white border-gray-500' },
-  { value: 4, label: 'Setuju', color: 'border-teal-200 hover:bg-teal-50 text-teal-700 active:bg-teal-100', activeClass: 'bg-teal-500 text-white border-teal-500' },
-  { value: 5, label: 'Sangat Setuju', color: 'border-emerald-200 hover:bg-emerald-50 text-emerald-700 active:bg-emerald-100', activeClass: 'bg-emerald-500 text-white border-emerald-500' },
+  { value: 1, label: 'Sangat Tidak Setuju' },
+  { value: 2, label: 'Tidak Setuju' },
+  { value: 3, label: 'Ragu-Ragu / Netral' },
+  { value: 4, label: 'Setuju' },
+  { value: 5, label: 'Sangat Setuju' }
 ];
 
 const MAJORS = [
@@ -68,9 +57,11 @@ const MAJORS = [
   'Lainnya'
 ];
 
+const supabase = createClient();
+
 export default function Home() {
   const [step, setStep] = useState<'welcome' | 'register' | 'quiz' | 'submitting' | 'result'>('welcome');
-  const [questions, setQuestions] = useState<Question[]>(DEFAULT_QUESTIONS);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(true);
   
   // Student registration details
@@ -106,10 +97,12 @@ export default function Home() {
         if (error) throw error;
         if (data && data.length > 0) {
           setQuestions(data as Question[]);
+        } else {
+          setQuestions(DEFAULT_QUESTIONS);
         }
       } catch (err) {
         console.error('Error fetching questions from Supabase, using defaults:', err);
-        // Silently fall back to DEFAULT_QUESTIONS
+        setQuestions(DEFAULT_QUESTIONS);
       } finally {
         setLoadingQuestions(false);
       }
@@ -160,7 +153,8 @@ export default function Home() {
   };
 
   const handleNextQuestion = () => {
-    if (answers[questions[currentQuestionIndex].id]) {
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion && answers[currentQuestion.id]) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
   };
@@ -179,7 +173,7 @@ export default function Home() {
     };
 
     questions.forEach(q => {
-      const score = answers[q.id] || 3; // Fallback to 3 if unanswered (should not happen)
+      const score = answers[q.id] || 3; // Fallback to 3 if unanswered
       totalScore += score;
       if (categoryTotals[q.category]) {
         categoryTotals[q.category].earned += score;
@@ -187,8 +181,6 @@ export default function Home() {
       }
     });
 
-    // Stress levels based on score mapping
-    // Low: 12-28, Moderate: 29-44, High: 45-60 (scaled based on count of questions)
     const totalPossible = questions.length * 5;
     const minPossible = questions.length * 1;
     const range = totalPossible - minPossible;
@@ -211,7 +203,7 @@ export default function Home() {
       calculatedCategories[cat] = {
         earned: data.earned,
         max: max,
-        percentage: Math.round((data.earned / max) * 100)
+        percentage: max > 0 ? Math.round((data.earned / max) * 100) : 0
       };
     });
 
@@ -254,12 +246,11 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Error saving questionnaire response to Supabase:', err);
-      setSubmittingError('Hasil perhitungan lokal sukses. Namun, gagal menyimpan ke database (Supabase belum terhubung).');
+      setSubmittingError('Hasil berhasil dihitung di browser Anda, namun gagal sinkronisasi dengan database online.');
     } finally {
-      // Small artificial delay for nice animation
       setTimeout(() => {
         setStep('result');
-      }, 1000);
+      }, 600);
     }
   };
 
@@ -273,43 +264,41 @@ export default function Home() {
   };
 
   // Helper values
-  const progressPercent = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
-  const currentQuestion = questions[currentQuestionIndex];
-  const allAnswered = questions.every(q => answers[q.id] !== undefined);
+  const currentQuestion = questions.length > 0 && currentQuestionIndex < questions.length 
+    ? questions[currentQuestionIndex] 
+    : null;
+  const progressPercent = questions.length > 0 
+    ? Math.round(((currentQuestionIndex + 1) / questions.length) * 100) 
+    : 0;
+  const allAnswered = questions.length > 0 && questions.every(q => answers[q.id] !== undefined);
 
   // Recommendations content helper
   const getRecommendations = (level: 'Low' | 'Moderate' | 'High', categories: Record<string, { percentage: number }>) => {
     const recs = [];
-    
-    // Sort categories by highest stress percentage
-    const sortedCategories = Object.entries(categories).sort((a, b) => b[1].percentage - a[1].percentage);
-    const primaryStressor = sortedCategories[0][0];
-
     if (level === 'Low') {
-      recs.push('Pertahankan kebiasaan belajar dan pola hidup sehat yang Anda jalani saat ini.');
-      recs.push('Ikuti kegiatan rekreasi atau olahraga ringan untuk menjaga kondisi mental tetap prima.');
+      recs.push('Pertahankan kebiasaan belajar dan manajemen waktu yang Anda jalani saat ini.');
+      recs.push('Lanjutkan rutinitas fisik dan hobi rekreasi Anda untuk memelihara kondisi mental prima.');
     } else if (level === 'Moderate') {
-      recs.push('Lakukan teknik relaksasi seperti pernapasan dalam atau meditasi saat mulai merasa tertekan.');
-      recs.push('Buat jadwal manajemen waktu yang lebih terstruktur untuk menghindari penumpukan tugas.');
-      recs.push('Diskusikan keluhan Anda dengan teman terdekat atau keluarga untuk mengurangi beban mental.');
+      recs.push('Gunakan teknik relaksasi sadar (mindfulness) atau latihan pernapasan dalam saat mulai tertekan.');
+      recs.push('Rapikan jadwal mingguan Anda untuk menghindari penumpukan tenggat waktu akademis.');
+      recs.push('Bicarakan beban pikiran Anda dengan teman terdekat, keluarga, atau mentor wali.');
     } else {
-      recs.push('Sangat disarankan untuk melakukan konseling dengan psikolog kampus atau Unit Konseling Mahasiswa.');
-      recs.push('Segera batasi aktivitas tambahan di luar kuliah untuk fokus pada pemulihan kesehatan mental.');
-      recs.push('Bicarakan dengan dosen wali atau dosen pengampu jika stres Anda disebabkan oleh hambatan akademik.');
+      recs.push('Sangat disarankan berkonsultasi dengan Unit Konseling Mahasiswa atau psikolog profesional.');
+      recs.push('Kurangi komitmen atau aktivitas sekunder untuk fokus memulihkan energi mental Anda.');
+      recs.push('Komunikasikan hambatan perkuliahan Anda secara terbuka kepada Dosen Wali Akademik.');
     }
 
-    // Specific category alerts
     if (categories['Academic']?.percentage >= 65) {
-      recs.push('Rekomendasi Akademik: Coba teknik belajar Pomodoro, buat kelompok belajar, dan konsultasikan kendala mata kuliah dengan dosen wali.');
+      recs.push('Akademik: Atur belajar dengan metode Pomodoro (25 menit belajar, 5 menit jeda) dan perkecil skala tugas besar.');
     }
     if (categories['Financial']?.percentage >= 65) {
-      recs.push('Rekomendasi Finansial: Ajukan konseling ke bagian kemahasiswaan untuk mencari informasi beasiswa atau opsi keringanan UKT.');
+      recs.push('Finansial: Hubungi bagian kemahasiswaan untuk menanyakan info beasiswa atau cicilan UKT.');
     }
     if (categories['Social']?.percentage >= 65) {
-      recs.push('Rekomendasi Sosial: Bergabunglah dengan Unit Kegiatan Mahasiswa (UKM) yang Anda sukai untuk memperluas pertemanan secara sehat.');
+      recs.push('Sosial: Sempatkan berdiskusi kelompok di ruang publik kampus atau ikut komunitas hobi yang santai.');
     }
     if (categories['Personal']?.percentage >= 65) {
-      recs.push('Rekomendasi Personal: Prioritaskan tidur minimal 7-8 jam semalam, kurangi konsumsi kafein berlebih, dan lakukan rutinitas olahraga kecil.');
+      recs.push('Personal: Perbaiki waktu tidur (usahakan 7-8 jam), batasi stimulasi layar malam hari, dan kurangi kafein.');
     }
 
     return recs;
@@ -319,168 +308,140 @@ export default function Home() {
     switch (level) {
       case 'Low':
         return {
-          title: 'Tingkat Stres Rendah',
-          color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-          badgeColor: 'bg-emerald-500 text-white',
-          desc: 'Kondisi kesehatan mental Anda saat ini tergolong stabil dan baik. Anda mampu mengatasi stres perkuliahan sehari-hari dengan efektif.',
-          icon: <Smile className="w-16 h-16 text-emerald-500" />
+          title: 'Stres Rendah',
+          bg: 'bg-zinc-50 border-zinc-200 text-zinc-900',
+          desc: 'Kesehatan psikologis Anda tergolong stabil dan seimbang. Anda mampu mengelola tantangan hidup perkuliahan dengan baik.'
         };
       case 'Moderate':
         return {
-          title: 'Tingkat Stres Sedang',
-          color: 'text-orange-700 bg-orange-50 border-orange-200',
-          badgeColor: 'bg-orange-500 text-white',
-          desc: 'Anda mengalami tingkat tekanan yang cukup signifikan. Beberapa aspek kuliah atau personal mulai membebani pikiran Anda. Disarankan melakukan pencegahan dini agar tidak memburuk.',
-          icon: <AlertTriangle className="w-16 h-16 text-orange-500" />
+          title: 'Stres Sedang',
+          bg: 'bg-zinc-50 border-zinc-200 text-zinc-900',
+          desc: 'Anda mulai merasakan tekanan psikologis yang cukup membebani. Langkah penyesuaian diri disarankan agar tingkat stres tidak meningkat.'
         };
       case 'High':
         return {
-          title: 'Tingkat Stres Tinggi',
-          color: 'text-red-700 bg-red-50 border-red-200',
-          badgeColor: 'bg-red-500 text-white',
-          desc: 'Anda sedang berada di bawah tekanan mental yang sangat berat. Kondisi ini dapat mengganggu kesehatan fisik, konsentrasi belajar, dan aktivitas sehari-hari. Mohon prioritaskan pemulihan Anda.',
-          icon: <ShieldAlert className="w-16 h-16 text-red-500" />
+          title: 'Stres Tinggi',
+          bg: 'bg-zinc-950 border-zinc-800 text-zinc-50',
+          desc: 'Anda sedang berada di bawah beban tekanan yang sangat berat. Hal ini berpotensi mengganggu produktivitas akademis dan kebugaran fisik Anda. Harap prioritaskan relaksasi atau bantuan ahli.'
         };
     }
   };
 
   return (
-    <main className="flex-1 bg-gradient-to-br from-slate-50 via-teal-50/20 to-blue-50/30 py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-center min-h-screen">
-      <div className="max-w-3xl mx-auto w-full">
-        
-        {/* Navigation & Logo */}
-        <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center gap-2">
-            <div className="bg-teal-600 text-white p-2 rounded-xl shadow-md">
-              <Heart className="w-6 h-6 animate-pulse" />
-            </div>
-            <div>
-              <span className="font-bold text-slate-800 text-lg block leading-none">MindCare</span>
-              <span className="text-xs text-slate-500">Prediksi Stres Mahasiswa</span>
-            </div>
-          </div>
-          <Link 
-            href="/admin" 
-            className="text-sm font-semibold text-slate-600 hover:text-teal-600 border border-slate-200 hover:border-teal-200 bg-white/70 backdrop-blur-sm px-4 py-2 rounded-xl transition duration-200 shadow-sm"
-          >
-            Portal Admin
+    <main className="flex-1 bg-white text-zinc-900 font-sans min-h-screen flex flex-col justify-between py-12 px-6 sm:px-8 max-w-4xl mx-auto w-full">
+      
+      {/* Header (Premium & Minimalist) */}
+      <header className="flex justify-between items-baseline border-b border-zinc-100 pb-6 w-full">
+        <div>
+          <Link href="/" className="text-xl font-medium tracking-tight text-zinc-900 hover:opacity-85 transition">
+            MindCare.
           </Link>
+          <span className="text-xs text-zinc-400 font-normal block mt-1">Student Stress Assessment Portal</span>
         </div>
+        <Link 
+          href="/admin" 
+          className="text-xs font-mono text-zinc-500 hover:text-zinc-900 border-b border-dotted border-zinc-300 hover:border-zinc-900 transition pb-0.5"
+        >
+          admin_portal
+        </Link>
+      </header>
 
+      {/* Main content body (Generous padding - whitespace / anti-gravity) */}
+      <section className="my-auto py-16 w-full">
+        
         {/* STEP 1: WELCOME SCREEN */}
         {step === 'welcome' && (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-slate-100 shadow-xl p-8 text-center transition-all duration-300">
-            <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-teal-50 border border-teal-100 text-teal-700 text-xs font-semibold mb-6">
-              <Sparkles className="w-3.5 h-3.5" /> Skrining Kesehatan Mental Mahasiswa
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">
-              Prediksi & Ukur Tingkat Stres Anda
-            </h1>
-            <p className="text-slate-600 text-base sm:text-lg max-w-xl mx-auto mb-8 leading-relaxed">
-              Kuesioner ini dirancang untuk mendeteksi tingkat stres akademik, finansial, sosial, dan personal secara dini. Dapatkan analisis instan dan rekomendasi yang sesuai untuk Anda.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 max-w-md mx-auto mb-8 text-left">
-              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-start gap-3">
-                <BookOpen className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-slate-800 text-sm">Akademik & Finansial</h4>
-                  <p className="text-xs text-slate-500">Beban tugas & pembayaran UKT</p>
-                </div>
-              </div>
-              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-start gap-3">
-                <Users className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-slate-800 text-sm">Sosial & Personal</h4>
-                  <p className="text-xs text-slate-500">Relasi & kesehatan diri</p>
-                </div>
-              </div>
+          <div className="space-y-10 animate-fade-in max-w-2xl">
+            <div className="space-y-4">
+              <span className="text-xs uppercase font-mono tracking-widest text-emerald-600 font-semibold">Assessment Tool</span>
+              <h1 className="text-4xl sm:text-6xl font-light tracking-tight text-zinc-900 leading-tight">
+                Prediksi & Ukur Tingkat Stres Anda.
+              </h1>
+              <p className="text-zinc-500 text-base leading-relaxed font-normal pt-2">
+                Sebuah aplikasi evaluasi mandiri terstruktur untuk mendeteksi dini stres akademik, finansial, sosial, dan personal mahasiswa. Diagnosis instan berbasis pengisian skala Likert.
+              </p>
             </div>
 
-            <button
-              onClick={handleStart}
-              className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold px-8 py-4 rounded-2xl transition duration-200 transform hover:-translate-y-0.5 shadow-lg shadow-teal-600/20 text-lg w-full sm:w-auto"
-            >
-              Mulai Kuesioner <ArrowRight className="w-5 h-5" />
-            </button>
-            <div className="mt-4 text-xs text-slate-400 flex items-center justify-center gap-1.5">
-              <Info className="w-3.5 h-3.5" /> Pengerjaan memakan waktu kurang dari 3 menit. Data Anda dirahasiakan.
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
+              <button
+                onClick={handleStart}
+                className="inline-flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white font-medium px-8 py-3.5 rounded-none border border-zinc-900 text-sm tracking-wide transition duration-200"
+              >
+                Mulai Skrining <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="pt-6 border-t border-zinc-100 flex items-center gap-2 text-xs text-zinc-400 font-mono">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Data Anda bersifat anonim & dirahasiakan sepenuhnya.</span>
             </div>
           </div>
         )}
 
         {/* STEP 2: STUDENT REGISTRATION FORM */}
         {step === 'register' && (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-slate-100 shadow-xl p-8 transition-all duration-300">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Informasi Mahasiswa</h2>
-            <p className="text-slate-500 text-sm mb-6">Harap isi biodata singkat Anda sebelum memulai pengisian kuesioner stres.</p>
+          <div className="max-w-md space-y-8 animate-fade-in">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-light text-zinc-900 tracking-tight">Identitas Diri</h2>
+              <p className="text-zinc-500 text-sm">Harap lengkapi informasi singkat berikut sebelum memulai pertanyaan.</p>
+            </div>
 
-            <form onSubmit={handleRegisterSubmit} className="space-y-5">
-              <div>
-                <label htmlFor="name" className="block text-sm font-semibold text-slate-700 mb-1.5">Nama Lengkap</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <User className="w-5 h-5" />
-                  </span>
-                  <input
-                    type="text"
-                    id="name"
-                    value={studentInfo.name}
-                    onChange={e => setStudentInfo(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Masukkan nama lengkap Anda"
-                    className="pl-11 pr-4 py-3.5 w-full bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-200"
-                  />
-                </div>
-                {formErrors.name && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.name}</p>}
+            <form onSubmit={handleRegisterSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label htmlFor="name" className="block text-xs font-mono text-zinc-500 uppercase">Nama Lengkap</label>
+                <input
+                  type="text"
+                  id="name"
+                  value={studentInfo.name}
+                  onChange={e => setStudentInfo(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Nama Lengkap Anda"
+                  className="w-full bg-white border border-zinc-200 focus:border-zinc-900 px-4 py-3 text-sm focus:outline-none transition duration-150 rounded-none text-zinc-850"
+                />
+                {formErrors.name && <p className="text-red-600 text-xs font-mono">{formErrors.name}</p>}
               </div>
 
-              <div>
-                <label htmlFor="nim" className="block text-sm font-semibold text-slate-700 mb-1.5">Nomor Induk Mahasiswa (NIM)</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 font-mono text-sm select-none">
-                    #
-                  </span>
-                  <input
-                    type="text"
-                    id="nim"
-                    value={studentInfo.nim}
-                    onChange={e => setStudentInfo(prev => ({ ...prev, nim: e.target.value }))}
-                    placeholder="Contoh: 2109106001"
-                    className="pl-11 pr-4 py-3.5 w-full bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-200 font-mono"
-                  />
-                </div>
-                {formErrors.nim && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.nim}</p>}
+              <div className="space-y-2">
+                <label htmlFor="nim" className="block text-xs font-mono text-zinc-500 uppercase">Nomor Induk Mahasiswa (NIM)</label>
+                <input
+                  type="text"
+                  id="nim"
+                  value={studentInfo.nim}
+                  onChange={e => setStudentInfo(prev => ({ ...prev, nim: e.target.value }))}
+                  placeholder="NIM Angka"
+                  className="w-full bg-white border border-zinc-200 focus:border-zinc-900 px-4 py-3 text-sm focus:outline-none transition duration-150 rounded-none font-mono text-zinc-850"
+                />
+                {formErrors.nim && <p className="text-red-600 text-xs font-mono">{formErrors.nim}</p>}
               </div>
 
-              <div>
-                <label htmlFor="major" className="block text-sm font-semibold text-slate-700 mb-1.5">Program Studi / Jurusan</label>
+              <div className="space-y-2">
+                <label htmlFor="major" className="block text-xs font-mono text-zinc-500 uppercase">Program Studi</label>
                 <select
                   id="major"
                   value={studentInfo.major}
                   onChange={e => setStudentInfo(prev => ({ ...prev, major: e.target.value }))}
-                  className="w-full py-3.5 px-4 bg-white border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-200"
+                  className="w-full py-3 px-4 bg-white border border-zinc-200 focus:border-zinc-900 text-sm focus:outline-none transition duration-150 rounded-none text-zinc-700"
                 >
                   <option value="">Pilih Program Studi</option>
                   {MAJORS.map(major => (
                     <option key={major} value={major}>{major}</option>
                   ))}
                 </select>
-                {formErrors.major && <p className="text-red-500 text-xs mt-1.5 font-medium">{formErrors.major}</p>}
+                {formErrors.major && <p className="text-red-600 text-xs font-mono">{formErrors.major}</p>}
               </div>
 
-              <div className="pt-4 flex gap-3">
+              <div className="pt-4 flex gap-4">
                 <button
                   type="button"
                   onClick={() => setStep('welcome')}
-                  className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 border border-zinc-200 hover:bg-zinc-55 hover:border-zinc-400 text-zinc-600 text-sm font-medium tracking-wide transition duration-150 rounded-none"
                 >
                   Kembali
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/10"
+                  className="flex-1 py-3 bg-zinc-900 hover:bg-zinc-850 text-white text-sm font-medium tracking-wide transition duration-150 rounded-none"
                 >
-                  Lanjut ke Kuesioner <ArrowRight className="w-4 h-4" />
+                  Berikutnya
                 </button>
               </div>
             </form>
@@ -489,205 +450,175 @@ export default function Home() {
 
         {/* STEP 3: QUESTIONNAIRE WIZARD */}
         {step === 'quiz' && (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-slate-100 shadow-xl p-8 transition-all duration-300">
-            {/* Header info */}
-            <div className="flex justify-between items-center mb-6">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Skrining Stres Mahasiswa
-              </span>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-                Pertanyaan {currentQuestionIndex + 1} dari {questions.length}
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden mb-8">
-              <div 
-                className="bg-teal-600 h-full rounded-full transition-all duration-300"
-                style={{ width: `${progressPercent}%` }}
-              ></div>
-            </div>
-
-            {/* Active Question Card */}
-            <div className="min-h-[140px] flex flex-col justify-center mb-8">
-              <div className="inline-flex gap-2 items-center mb-3">
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                  currentQuestion.category === 'Academic' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                  currentQuestion.category === 'Financial' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
-                  currentQuestion.category === 'Social' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                  'bg-teal-50 text-teal-700 border border-teal-100'
-                }`}>
-                  Dimensi {currentQuestion.category === 'Academic' ? 'Akademik' :
-                           currentQuestion.category === 'Financial' ? 'Finansial' :
-                           currentQuestion.category === 'Social' ? 'Sosial' : 'Personal'}
-                </span>
+          <div className="max-w-2xl space-y-10 animate-fade-in">
+            {loadingQuestions ? (
+              <p className="text-zinc-500 font-mono text-sm">Menyiapkan butir kuesioner...</p>
+            ) : questions.length === 0 || !currentQuestion ? (
+              <div className="space-y-4">
+                <p className="text-zinc-500 font-mono text-sm">Kesalahan: Butir kuesioner gagal dimuat.</p>
+                <button onClick={handleRetake} className="bg-zinc-900 text-white px-4 py-2 text-xs font-mono">Reset</button>
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 leading-snug">
-                "{currentQuestion.question_text}"
-              </h3>
-            </div>
+            ) : (
+              <>
+                {/* Meta details */}
+                <div className="flex justify-between items-baseline text-xs text-zinc-400 font-mono">
+                  <span className="uppercase tracking-widest text-[10px] bg-zinc-100 text-zinc-600 px-2 py-0.5 font-bold">
+                    ASPEK {currentQuestion.category === 'Academic' ? 'AKADEMIK' :
+                           currentQuestion.category === 'Financial' ? 'FINANSIAL' :
+                           currentQuestion.category === 'Social' ? 'SOSIAL' : 'PERSONAL'}
+                  </span>
+                  <span>
+                    PERTANYAAN {currentQuestionIndex + 1} DARI {questions.length}
+                  </span>
+                </div>
 
-            {/* Likert Scale Selector */}
-            <div className="space-y-3 mb-8">
-              {LIKERT_OPTIONS.map((opt) => {
-                const isSelected = answers[currentQuestion.id] === opt.value;
-                return (
+                {/* Progress bar */}
+                <div className="w-full bg-zinc-100 h-1.5 rounded-none">
+                  <div 
+                    className="bg-zinc-900 h-full transition-all duration-300"
+                    style={{ width: `${progressPercent}%` }}
+                  ></div>
+                </div>
+
+                {/* Active Question Statement */}
+                <div className="py-4">
+                  <h3 className="text-3xl sm:text-4xl font-light text-zinc-900 leading-snug tracking-tight">
+                    "{currentQuestion.question_text}"
+                  </h3>
+                </div>
+
+                {/* Likert Scale Selector (Borders over shadows) */}
+                <div className="space-y-2">
+                  {LIKERT_OPTIONS.map((opt) => {
+                    const isSelected = answers[currentQuestion.id] === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => handleAnswerSelect(currentQuestion.id, opt.value)}
+                        className={`w-full py-4 px-6 border text-left font-medium text-sm transition-all duration-150 flex items-center justify-between rounded-none ${
+                          isSelected 
+                            ? 'border-zinc-900 bg-zinc-950 text-white' 
+                            : 'border-zinc-200 bg-white hover:border-zinc-400 text-zinc-800'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        <span className={`w-5 h-5 border flex items-center justify-center font-mono text-xs rounded-none ${
+                          isSelected ? 'border-zinc-700 text-zinc-200' : 'border-zinc-200 text-zinc-400'
+                        }`}>
+                          {opt.value}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex justify-between items-center gap-4 pt-6 border-t border-zinc-100">
                   <button
-                    key={opt.value}
-                    onClick={() => handleAnswerSelect(currentQuestion.id, opt.value)}
-                    className={`w-full py-3.5 px-6 rounded-2xl border text-left font-semibold text-sm transition duration-200 flex items-center justify-between group ${
-                      isSelected 
-                        ? opt.activeClass 
-                        : `${opt.color} bg-white shadow-sm hover:shadow-md`
-                    }`}
+                    onClick={handlePrevQuestion}
+                    disabled={currentQuestionIndex === 0}
+                    className="flex-1 border border-zinc-200 hover:border-zinc-400 text-zinc-700 disabled:opacity-30 disabled:hover:border-zinc-200 py-3 text-sm font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 rounded-none"
                   >
-                    <span>{opt.label}</span>
-                    <span className={`w-6 h-6 rounded-full border flex items-center justify-center font-mono text-xs ${
-                      isSelected 
-                        ? 'bg-white text-slate-800 border-white' 
-                        : 'border-slate-200 group-hover:border-slate-400 text-slate-400'
-                    }`}>
-                      {opt.value}
-                    </span>
+                    <ArrowLeft className="w-4 h-4" /> Kembali
                   </button>
-                );
-              })}
-            </div>
 
-            {/* Pagination Controls */}
-            <div className="flex justify-between items-center gap-4">
-              <button
-                onClick={handlePrevQuestion}
-                disabled={currentQuestionIndex === 0}
-                className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent font-semibold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" /> Kembali
-              </button>
-
-              {currentQuestionIndex < questions.length - 1 ? (
-                <button
-                  onClick={handleNextQuestion}
-                  disabled={!answers[currentQuestion.id]}
-                  className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white font-semibold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2"
-                >
-                  Lanjut <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={handleSubmitQuiz}
-                  disabled={!allAnswered}
-                  className="flex-1 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-teal-600/10"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Kirim Jawaban
-                </button>
-              )}
-            </div>
+                  {currentQuestionIndex < questions.length - 1 ? (
+                    <button
+                      onClick={handleNextQuestion}
+                      disabled={!answers[currentQuestion.id]}
+                      className="flex-1 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-30 text-white py-3 text-sm font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 rounded-none"
+                    >
+                      Lanjut <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSubmitQuiz}
+                      disabled={!allAnswered}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white py-3 text-sm font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 rounded-none"
+                    >
+                      Kirim Jawaban
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {/* STEP 4: SUBMITTING / LOADING STATE */}
         {step === 'submitting' && (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-slate-100 shadow-xl p-12 text-center transition-all duration-300 flex flex-col items-center justify-center min-h-[350px]">
-            <div className="w-16 h-16 border-4 border-teal-200 border-t-teal-600 rounded-full animate-spin mb-6"></div>
-            <h3 className="text-xl font-bold text-slate-800 mb-2">Menganalisis Jawaban Anda...</h3>
-            <p className="text-slate-500 text-sm max-w-sm">Mohon tunggu, sistem sedang menghitung parameter psikologis stres Anda dan menyimpan data secara aman.</p>
+          <div className="max-w-md space-y-4 py-12 animate-fade-in">
+            <div className="w-8 h-8 border-2 border-zinc-300 border-t-zinc-900 animate-spin"></div>
+            <h3 className="text-xl font-light text-zinc-900">Menganalisis hasil skrining Anda...</h3>
+            <p className="text-zinc-500 text-sm font-mono">menghitung parameter tingkat stres & merumuskan solusi</p>
           </div>
         )}
 
         {/* STEP 5: RESULTS SCREEN */}
         {step === 'result' && calculatedResult && (
-          <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-slate-100 shadow-xl p-8 transition-all duration-300 space-y-8">
+          <div className="space-y-12 animate-fade-in">
             
             {/* Header info */}
-            <div className="text-center pb-4 border-b border-slate-100">
-              <h2 className="text-2xl font-bold text-slate-900 mb-1">Hasil Analisis Stres Mahasiswa</h2>
-              <p className="text-slate-500 text-sm">Nama: <span className="font-semibold text-slate-700">{studentInfo.name}</span> | NIM: <span className="font-mono text-slate-700">{studentInfo.nim}</span></p>
-              <p className="text-xs text-slate-400 mt-1">{studentInfo.major}</p>
+            <div className="space-y-3 pb-6 border-b border-zinc-100">
+              <span className="text-xs font-mono text-zinc-400 uppercase tracking-widest block">Ringkasan Hasil Diagnosis</span>
+              <h2 className="text-3xl sm:text-4xl font-light text-zinc-900 tracking-tight">
+                Prediksi Stres: <span className="font-semibold text-zinc-950">{getLevelDetails(calculatedResult.level).title}</span>
+              </h2>
+              <p className="text-zinc-500 text-sm">
+                Nama: <span className="font-medium text-zinc-850">{studentInfo.name}</span> &bull; NIM: <span className="font-mono text-zinc-850">{studentInfo.nim}</span>
+              </p>
+              <p className="text-xs text-zinc-400 font-mono mt-0.5">{studentInfo.major}</p>
             </div>
 
-            {/* Score & Stress level panel */}
+            {/* Score & Stress level panel (Zinc minimalist layout) */}
             {(() => {
               const details = getLevelDetails(calculatedResult.level);
               return (
-                <div className={`p-6 rounded-3xl border flex flex-col md:flex-row items-center md:items-start gap-6 ${details.color}`}>
-                  <div className="shrink-0 p-3 rounded-2xl bg-white/60 shadow-sm">
-                    {details.icon}
+                <div className={`p-8 border ${details.bg} space-y-4`}>
+                  <div className="flex justify-between items-baseline">
+                    <span className="text-sm font-mono uppercase tracking-wider opacity-85">Keterangan Diagnosis</span>
+                    <span className="text-sm font-mono font-bold">
+                      Skor: {calculatedResult.score} / {questions.length * 5}
+                    </span>
                   </div>
-                  <div className="text-center md:text-left space-y-2">
-                    <div className="flex flex-col md:flex-row md:items-center gap-2">
-                      <span className="font-extrabold text-2xl tracking-tight text-slate-800">{details.title}</span>
-                      <span className={`inline-block mx-auto md:mx-0 px-3 py-1 rounded-full text-xs font-bold ${details.badgeColor}`}>
-                        Skor: {calculatedResult.score} / {questions.length * 5}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium leading-relaxed text-slate-600">{details.desc}</p>
-                  </div>
+                  <p className="text-sm leading-relaxed opacity-90 font-normal">{details.desc}</p>
                 </div>
               );
             })()}
 
             {/* Warning if Supabase call failed */}
             {submittingError && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl text-xs flex items-start gap-2.5">
-                <Info className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
+              <div className="border border-amber-200 bg-amber-50/50 p-4 text-xs font-mono text-amber-800 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Penyimpanan Lokal Aktif:</span>
+                  <span className="font-bold">Offline Warning: </span>
                   {submittingError}
                 </div>
               </div>
             )}
 
             {/* Dimension breakdown progress bars */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                <ClipboardList className="w-5 h-5 text-teal-600" /> Analisis Detail per Dimensi Stres
-              </h3>
+            <div className="space-y-6">
+              <h3 className="text-lg font-light text-zinc-950">Analisis Dimensi Kesehatan</h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.entries(calculatedResult.categoryScores).map(([cat, data]) => {
-                  let barColor = 'bg-teal-500';
-                  let bgTrack = 'bg-teal-50';
-                  let icon = <BookOpen className="w-4 h-4" />;
-                  
-                  if (cat === 'Academic') {
-                    barColor = 'bg-blue-500';
-                    bgTrack = 'bg-blue-50';
-                    icon = <BookOpen className="w-4 h-4 text-blue-600" />;
-                  } else if (cat === 'Financial') {
-                    barColor = 'bg-amber-500';
-                    bgTrack = 'bg-amber-50';
-                    icon = <Wallet className="w-4 h-4 text-amber-600" />;
-                  } else if (cat === 'Social') {
-                    barColor = 'bg-purple-500';
-                    bgTrack = 'bg-purple-50';
-                    icon = <Users className="w-4 h-4 text-purple-600" />;
-                  } else {
-                    barColor = 'bg-teal-600';
-                    bgTrack = 'bg-teal-50';
-                    icon = <User className="w-4 h-4 text-teal-600" />;
-                  }
-
                   return (
-                    <div key={cat} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className={`p-1.5 rounded-lg ${bgTrack}`}>
-                            {icon}
-                          </div>
-                          <span className="text-sm font-semibold text-slate-700">
-                            {cat === 'Academic' ? 'Akademik' :
-                             cat === 'Financial' ? 'Finansial' :
-                             cat === 'Social' ? 'Sosial' : 'Personal'}
-                          </span>
-                        </div>
-                        <span className="text-xs font-mono font-bold text-slate-500">
+                    <div key={cat} className="p-5 border border-zinc-200 bg-white space-y-3">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs font-mono uppercase tracking-wider text-zinc-500">
+                          {cat === 'Academic' ? 'Akademik' :
+                           cat === 'Financial' ? 'Finansial' :
+                           cat === 'Social' ? 'Sosial' : 'Personal'}
+                        </span>
+                        <span className="text-xs font-mono font-bold text-zinc-700">
                           {data.earned}/{data.max} ({data.percentage}%)
                         </span>
                       </div>
                       
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-zinc-150 h-1">
                         <div 
-                          className={`${barColor} h-full rounded-full transition-all duration-500`}
+                          className="bg-zinc-900 h-full transition-all duration-500"
                           style={{ width: `${data.percentage}%` }}
                         ></div>
                       </div>
@@ -698,43 +629,46 @@ export default function Home() {
             </div>
 
             {/* Recommendations */}
-            <div className="bg-slate-50/80 border border-slate-100 p-6 rounded-3xl space-y-3">
-              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 uppercase tracking-wide">
-                <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" /> Rekomendasi Solusi & Tindakan
-              </h3>
-              <ul className="space-y-2.5">
+            <div className="border border-zinc-200 p-8 space-y-4">
+              <h3 className="text-sm font-mono uppercase tracking-wider text-zinc-500">Rekomendasi Tindakan Mandiri</h3>
+              <ul className="space-y-3">
                 {getRecommendations(calculatedResult.level, calculatedResult.categoryScores).map((rec, i) => (
-                  <li key={i} className="text-slate-600 text-sm flex items-start gap-2.5">
-                    <span className="shrink-0 w-5 h-5 rounded-full bg-teal-50 border border-teal-100 text-teal-600 flex items-center justify-center font-bold text-xs mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span>{rec}</span>
+                  <li key={i} className="text-zinc-600 text-sm flex items-start gap-3">
+                    <span className="text-zinc-400 font-mono text-xs mt-0.5">[{i + 1}]</span>
+                    <span className="leading-relaxed">{rec}</span>
                   </li>
                 ))}
               </ul>
             </div>
 
             {/* Bottom Actions */}
-            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+            <div className="pt-6 border-t border-zinc-100 flex flex-col sm:flex-row gap-4">
               <button
                 onClick={() => window.print()}
-                className="flex-1 border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2 text-sm shadow-sm"
+                className="flex-1 py-3 border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 text-sm rounded-none"
               >
-                <Download className="w-4 h-4" /> Cetak Hasil Skrining
+                <Printer className="w-4 h-4" /> Cetak Lembar Hasil
               </button>
 
               <button
                 onClick={handleRetake}
-                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-3.5 rounded-2xl transition duration-200 flex items-center justify-center gap-2 text-sm shadow-lg shadow-teal-600/10"
+                className="flex-1 py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 text-sm rounded-none"
               >
-                <RotateCcw className="w-4 h-4" /> Mengulang Skrining
+                <RotateCcw className="w-4 h-4" /> Ulangi Asesmen
               </button>
             </div>
 
           </div>
         )}
 
-      </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-100 pt-6 text-xs text-zinc-400 flex flex-col sm:flex-row justify-between items-baseline gap-2 w-full font-mono">
+        <span>&copy; {new Date().getFullYear()} MindCare Asesmen. All rights reserved.</span>
+        <span>Empathetic, Clinical & Objective mental health screening.</span>
+      </footer>
+
     </main>
   );
 }
