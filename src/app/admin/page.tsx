@@ -19,7 +19,7 @@ export default function AdminLogin() {
     setError(null);
 
     if (!username || !password) {
-      setError('Username dan kata sandi wajib diisi');
+      setError('Username/Email dan kata sandi wajib diisi');
       setLoading(false);
       return;
     }
