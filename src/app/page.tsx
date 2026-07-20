@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   ArrowRight, 
   ArrowLeft, 
@@ -141,6 +141,16 @@ export default function Home() {
   // Questionnaire responses
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const nextTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (nextTimeoutRef.current) {
+        clearTimeout(nextTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Result details
   const [calculatedResult, setCalculatedResult] = useState<{
@@ -227,10 +237,20 @@ export default function Home() {
   const handleAnswerSelect = (questionId: string, score: number) => {
     setAnswers(prev => ({ ...prev, [questionId]: score }));
     
+    // Clear any pending auto-advance timeout to prevent double-incrementing when clicking rapidly
+    if (nextTimeoutRef.current) {
+      clearTimeout(nextTimeoutRef.current);
+    }
+
     // Auto-advance after short delay for better UX
     if (currentQuestionIndex < questions.length - 1) {
-      setTimeout(() => {
-        setCurrentQuestionIndex(prev => prev + 1);
+      nextTimeoutRef.current = setTimeout(() => {
+        setCurrentQuestionIndex(prev => {
+          if (prev < questions.length - 1) {
+            return prev + 1;
+          }
+          return prev;
+        });
       }, 250);
     }
   };
@@ -249,6 +269,14 @@ export default function Home() {
   };
 
   const handleSubmitQuiz = async () => {
+    // Verify all questions are answered before submitting
+    const unansweredIndex = questions.findIndex(q => answers[q.id] === undefined);
+    if (unansweredIndex !== -1) {
+      setCurrentQuestionIndex(unansweredIndex);
+      alert(`Mohon lengkapi semua jawaban. Mengalihkan ke pertanyaan ke-${unansweredIndex + 1} yang belum dijawab.`);
+      return;
+    }
+
     setStep('submitting');
 
     // Calculate score logic
@@ -327,6 +355,9 @@ export default function Home() {
   };
 
   const handleRetake = () => {
+    if (nextTimeoutRef.current) {
+      clearTimeout(nextTimeoutRef.current);
+    }
     setAnswers({});
     setCurrentQuestionIndex(0);
     setStudentInfo({ name: '', nim: '', major: '', semester: '', age: '', gender: '' });
@@ -341,7 +372,7 @@ export default function Home() {
   const progressPercent = questions.length > 0 
     ? Math.round(((currentQuestionIndex + 1) / questions.length) * 100) 
     : 0;
-  const allAnswered = questions.length > 0 && questions.every(q => answers[q.id] !== undefined);
+
 
   // Recommendations content helper
   const getRecommendations = (level: 'Low' | 'Moderate' | 'High', categories: Record<string, { percentage: number }>) => {
@@ -693,8 +724,7 @@ export default function Home() {
                     ) : (
                       <button
                         onClick={handleSubmitQuiz}
-                        disabled={!allAnswered}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 text-white py-3 text-sm font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 rounded-none cursor-pointer"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 text-sm font-medium tracking-wide transition duration-150 flex items-center justify-center gap-2 rounded-none cursor-pointer"
                       >
                         Kirim Jawaban
                       </button>
