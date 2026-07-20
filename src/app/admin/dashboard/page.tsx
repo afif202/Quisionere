@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/utils/supabase/client';
 import {
   Plus,
   Edit2,
@@ -14,7 +13,6 @@ import {
   HelpCircle,
   FileSpreadsheet,
   AlertTriangle,
-  ChevronRight,
   RefreshCw,
   LogOut,
   ArrowLeft
@@ -37,7 +35,7 @@ import * as XLSX from 'xlsx';
 interface Question {
   id: string;
   question_text: string;
-  category: 'Academic' | 'Financial' | 'Social' | 'Personal';
+  category: string;
   created_at?: string;
 }
 
@@ -46,44 +44,107 @@ interface Response {
   student_name: string;
   student_nim: string;
   student_major: string;
+  student_semester: number;
+  student_age: number;
+  student_gender: string;
   total_score: number;
   stress_level_prediction: 'Low' | 'Moderate' | 'High';
   created_at: string;
 }
 
+const CATEGORIES = [
+  'Noise Level',
+  'Basic needs',
+  'living conditions',
+  'Bullying',
+  'Extracurricular Activities',
+  'Peer Pressure',
+  'Social Support',
+  'Future Career Concerns',
+  'Teacher Student Relationship',
+  'Study Load',
+  'Academic Performance',
+  'Sleep Quality',
+  'Depression',
+  'Self Esteem',
+  'Anxiety level'
+];
+
 const DEFAULT_QUESTIONS: Question[] = [
-  { id: '1', question_text: 'Saya merasa terbebani dengan jumlah tugas kuliah yang harus diselesaikan.', category: 'Academic' },
-  { id: '2', question_text: 'Saya kesulitan memahami materi perkuliahan yang diajarkan oleh dosen.', category: 'Academic' },
-  { id: '3', question_text: 'Saya merasa cemas menghadapi ujian atau presentasi di depan kelas.', category: 'Academic' },
-  { id: '4', question_text: 'Saya khawatir tidak dapat membayar Uang Kuliah Tunggal (UKT) tepat waktu.', category: 'Financial' },
-  { id: '5', question_text: 'Saya kesulitan mengatur pengeluaran keuangan sehari-hari selama kuliah.', category: 'Financial' },
-  { id: '6', question_text: 'Kondisi keuangan pribadi/keluarga mengganggu fokus belajar saya.', category: 'Financial' },
-  { id: '7', question_text: 'Saya merasa kesepian atau merasa terisolasi dari lingkungan kampus.', category: 'Social' },
-  { id: '8', question_text: 'Saya kesulitan berteman atau bersosialisasi dengan sesama mahasiswa.', category: 'Social' },
-  { id: '9', question_text: 'Saya mengalami konflik interpersonal dengan teman kuliah atau keluarga.', category: 'Social' },
-  { id: '10', question_text: 'Saya kurang tidur atau memiliki waktu istirahat yang tidak teratur karena tugas/kegiatan.', category: 'Personal' },
-  { id: '11', question_text: 'Saya merasa lelah secara fisik dan mental setelah menjalani perkuliahan sehari-hari.', category: 'Personal' },
-  { id: '12', question_text: 'Saya merasa cemas dan ragu mengenai masa depan karier saya setelah lulus.', category: 'Personal' }
+  // 1. Anxiety Level (5 questions)
+  { id: 'q-anxiety-1', question_text: 'Saya merasa cemas ketika menghadapi tugas kuliah.', category: 'Anxiety level' },
+  { id: 'q-anxiety-2', question_text: 'Saya sering merasa khawatir terhadap nilai akademik saya.', category: 'Anxiety level' },
+  { id: 'q-anxiety-3', question_text: 'Saya merasa sulit mengendalikan rasa cemas selama perkuliahan.', category: 'Anxiety level' },
+  { id: 'q-anxiety-4', question_text: 'Saya merasa gelisah menjelang ujian atau presentasi.', category: 'Anxiety level' },
+  { id: 'q-anxiety-5', question_text: 'Saya sering memikirkan hal-hal buruk yang mungkin terjadi selama kuliah.', category: 'Anxiety level' },
+
+  // 2. Self Esteem (6 questions)
+  { id: 'q-esteem-1', question_text: 'Saya percaya pada kemampuan saya dalam menyelesaikan tugas kuliah.', category: 'Self Esteem' },
+  { id: 'q-esteem-2', question_text: 'Saya merasa mampu menghadapi tantangan akademik.', category: 'Self Esteem' },
+  { id: 'q-esteem-3', question_text: 'Saya merasa bangga terhadap pencapaian saya.', category: 'Self Esteem' },
+  { id: 'q-esteem-4', question_text: 'Saya mudah kehilangan rasa percaya diri ketika mendapat nilai buruk.', category: 'Self Esteem' },
+  { id: 'q-esteem-5', question_text: 'Saya yakin dapat menyelesaikan studi tepat waktu.', category: 'Self Esteem' },
+  { id: 'q-esteem-6', question_text: 'Saya sering merasa kemampuan saya tidak sebaik teman-teman di perkuliahan.', category: 'Self Esteem' },
+
+  // 3. Depression (5 questions)
+  { id: 'q-dep-1', question_text: 'Saya merasa kehilangan semangat dalam menjalani perkuliahan.', category: 'Depression' },
+  { id: 'q-dep-2', question_text: 'Saya sering merasa sedih tanpa alasan yang jelas.', category: 'Depression' },
+  { id: 'q-dep-3', question_text: 'Saya merasa sulit menikmati aktivitas sehari-hari.', category: 'Depression' },
+  { id: 'q-dep-4', question_text: 'Saya merasa putus asa terhadap masa depan akademik saya.', category: 'Depression' },
+  { id: 'q-dep-5', question_text: 'Saya merasa lelah secara emosional.', category: 'Depression' },
+
+  // 4. Sleep Quality (1 question)
+  { id: 'q-sleep-1', question_text: 'Mengukur kualitas tidur mahasiswa.', category: 'Sleep Quality' },
+
+  // 5. Academic Performance (1 question)
+  { id: 'q-acad-1', question_text: 'Saya merasa prestasi akademik saya sudah sesuai dengan harapan.', category: 'Academic Performance' },
+
+  // 6. Study Load (1 question)
+  { id: 'q-load-1', question_text: 'Saya merasa beban tugas kuliah yang saya terima cukup berat.', category: 'Study Load' },
+
+  // 7. Teacher–Student Relationship (1 question)
+  { id: 'q-teach-1', question_text: 'Saya memiliki hubungan komunikasi yang baik dengan dosen.', category: 'Teacher Student Relationship' },
+
+  // 8. Future Career Concerns (1 question)
+  { id: 'q-career-1', question_text: 'Saya merasa khawatir terhadap pekerjaan setelah lulus.', category: 'Future Career Concerns' },
+
+  // 9. Social Support (1 question)
+  { id: 'q-social-1', question_text: 'Saya mendapatkan dukungan dari keluarga dan teman ketika mengalami kesulitan.', category: 'Social Support' },
+
+  // 10. Peer Pressure (1 question)
+  { id: 'q-peer-1', question_text: 'Saya merasa tertekan karena membandingkan diri dengan teman.', category: 'Peer Pressure' },
+
+  // 11. Extracurricular Activities (1 question)
+  { id: 'q-extra-1', question_text: 'Saya mampu membagi waktu antara kuliah dan kegiatan organisasi.', category: 'Extracurricular Activities' },
+
+  // 12. Bullying (1 question)
+  { id: 'q-bull-1', question_text: 'Saya pernah mengalami perlakuan yang membuat saya merasa tidak nyaman di lingkungan kampus.', category: 'Bullying' },
+
+  // 13. Living Conditions (1 question)
+  { id: 'q-living-1', question_text: 'Lingkungan tempat tinggal saya mendukung proses belajar.', category: 'living conditions' },
+
+  // 14. Basic Needs (1 question)
+  { id: 'q-basic-1', question_text: 'Kebutuhan dasar saya sehari-hari terpenuhi dengan baik.', category: 'Basic needs' },
+
+  // 15. Noise Level (1 question)
+  { id: 'q-noise-1', question_text: 'Lingkungan tempat tinggal saya sering bising sehingga mengganggu belajar.', category: 'Noise Level' }
 ];
 
 const MOCK_RESPONSES: Response[] = [
-  { id: 'res-1', student_name: 'Budi Santoso', student_nim: '2109106001', student_major: 'Teknik Informatika / Ilmu Komputer', total_score: 48, stress_level_prediction: 'High', created_at: '2026-07-18T10:00:00Z' },
-  { id: 'res-2', student_name: 'Siti Aminah', student_nim: '2109106012', student_major: 'Psikologi', total_score: 24, stress_level_prediction: 'Low', created_at: '2026-07-18T11:30:00Z' },
-  { id: 'res-3', student_name: 'Fahri Hamzah', student_nim: '2109106035', student_major: 'Teknik Elektro', total_score: 38, stress_level_prediction: 'Moderate', created_at: '2026-07-18T14:15:00Z' },
-  { id: 'res-4', student_name: 'Dewi Lestari', student_nim: '2109106042', student_major: 'Manajemen / Bisnis', total_score: 41, stress_level_prediction: 'Moderate', created_at: '2026-07-19T08:20:00Z' },
-  { id: 'res-5', student_name: 'Rian Hidayat', student_nim: '2109106050', student_major: 'Teknik Informatika / Ilmu Komputer', total_score: 55, stress_level_prediction: 'High', created_at: '2026-07-19T09:45:00Z' },
-  { id: 'res-6', student_name: 'Putri Ayu', student_nim: '2109106056', student_major: 'Kedokteran / Farmasi', total_score: 31, stress_level_prediction: 'Moderate', created_at: '2026-07-19T10:10:00Z' },
-  { id: 'res-7', student_name: 'Andi Wijaya', student_nim: '2109106080', student_major: 'Hukum', total_score: 18, stress_level_prediction: 'Low', created_at: '2026-07-19T11:05:00Z' },
-  { id: 'res-8', student_name: 'Citra Kirana', student_nim: '2109106095', student_major: 'Sistem Informasi', total_score: 46, stress_level_prediction: 'High', created_at: '2026-07-19T12:00:00Z' },
+  { id: 'res-1', student_name: 'Budi Santoso', student_nim: '2109106001', student_major: 'Teknik Informatika / Ilmu Komputer', student_semester: 6, student_age: 21, student_gender: 'Laki-laki', total_score: 118, stress_level_prediction: 'High', created_at: '2026-07-18T10:00:00Z' },
+  { id: 'res-2', student_name: 'Siti Aminah', student_nim: '2109106012', student_major: 'Psikologi', student_semester: 4, student_age: 19, student_gender: 'Perempuan', total_score: 58, stress_level_prediction: 'Low', created_at: '2026-07-18T11:30:00Z' },
+  { id: 'res-3', student_name: 'Fahri Hamzah', student_nim: '2109106035', student_major: 'Teknik Elektro', student_semester: 8, student_age: 22, student_gender: 'Laki-laki', total_score: 88, stress_level_prediction: 'Moderate', created_at: '2026-07-18T14:15:00Z' },
+  { id: 'res-4', student_name: 'Dewi Lestari', student_nim: '2109106042', student_major: 'Manajemen / Bisnis', student_semester: 2, student_age: 18, student_gender: 'Perempuan', total_score: 91, stress_level_prediction: 'Moderate', created_at: '2026-07-19T08:20:00Z' },
+  { id: 'res-5', student_name: 'Rian Hidayat', student_nim: '2109106050', student_major: 'Teknik Informatika / Ilmu Komputer', student_semester: 6, student_age: 21, student_gender: 'Laki-laki', total_score: 128, stress_level_prediction: 'High', created_at: '2026-07-19T09:45:00Z' },
+  { id: 'res-6', student_name: 'Putri Ayu', student_nim: '2109106056', student_major: 'Kedokteran / Farmasi', student_semester: 4, student_age: 20, student_gender: 'Perempuan', total_score: 79, stress_level_prediction: 'Moderate', created_at: '2026-07-19T10:10:00Z' },
+  { id: 'res-7', student_name: 'Andi Wijaya', student_nim: '2109106080', student_major: 'Hukum', student_semester: 2, student_age: 19, student_gender: 'Laki-laki', total_score: 42, stress_level_prediction: 'Low', created_at: '2026-07-19T11:05:00Z' },
+  { id: 'res-8', student_name: 'Citra Kirana', student_nim: '2109106095', student_major: 'Sistem Informasi', student_semester: 6, student_age: 21, student_gender: 'Perempuan', total_score: 121, stress_level_prediction: 'High', created_at: '2026-07-19T12:00:00Z' },
 ];
-
-const supabase = createClient();
 
 export default function AdminDashboard() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'analytics' | 'questions' | 'responses'>('analytics');
-  const [isDemo, setIsDemo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
@@ -92,12 +153,15 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [majorFilter, setMajorFilter] = useState('');
   const [stressFilter, setStressFilter] = useState('');
+  
+  // Question Tab Filter
+  const [qAspectFilter, setQAspectFilter] = useState('');
 
   // Question Form State (Add/Edit)
   const [showQuestionModal, setShowQuestionModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [questionText, setQuestionText] = useState('');
-  const [questionCategory, setQuestionCategory] = useState<'Academic' | 'Financial' | 'Social' | 'Personal'>('Academic');
+  const [questionCategory, setQuestionCategory] = useState<string>('Noise Level');
   const [formError, setFormError] = useState('');
 
   useEffect(() => {
@@ -106,19 +170,17 @@ export default function AdminDashboard() {
 
   // Auth checking and load data
   useEffect(() => {
-    async function loadDashboard() {
+    function loadDashboard() {
       try {
-        const demo = localStorage.getItem('mindcare_demo_mode') === 'true';
-        setIsDemo(demo);
-
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session?.user && !demo) {
-          router.push('/admin');
-          return;
+        if (typeof window !== 'undefined') {
+          const auth = localStorage.getItem('mindcare_admin_auth') === 'true';
+          
+          if (!auth) {
+            router.push('/admin');
+            return;
+          }
+          refreshData();
         }
-
-        await refreshData();
       } catch (err) {
         console.error('Error loading dashboard data:', err);
       } finally {
@@ -128,60 +190,49 @@ export default function AdminDashboard() {
     loadDashboard();
   }, [router]);
 
-  const refreshData = async () => {
+  const refreshData = () => {
     setLoading(true);
     try {
-      // 1. Fetch questions
-      const { data: questionsData, error: qErr } = await supabase
-        .from('questions')
-        .select('*')
-        .order('created_at', { ascending: true });
-      
-      if (qErr) throw qErr;
-      
-      if (questionsData && questionsData.length > 0) {
-        setQuestions(questionsData as Question[]);
-      } else {
-        setQuestions(DEFAULT_QUESTIONS);
-      }
+      if (typeof window !== 'undefined') {
+        // 1. Fetch questions from localStorage
+        const storedQuestions = localStorage.getItem('mindcare_questions');
+        if (storedQuestions) {
+          setQuestions(JSON.parse(storedQuestions));
+        } else {
+          localStorage.setItem('mindcare_questions', JSON.stringify(DEFAULT_QUESTIONS));
+          setQuestions(DEFAULT_QUESTIONS);
+        }
 
-      // 2. Fetch responses
-      const { data: responsesData, error: rErr } = await supabase
-        .from('responses')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (rErr) throw rErr;
-
-      if (responsesData && responsesData.length > 0) {
-        setResponses(responsesData as Response[]);
-      } else {
-        setResponses(MOCK_RESPONSES);
+        // 2. Fetch responses from localStorage
+        const storedResponses = localStorage.getItem('mindcare_responses');
+        if (storedResponses) {
+          setResponses(JSON.parse(storedResponses));
+        } else {
+          localStorage.setItem('mindcare_responses', JSON.stringify(MOCK_RESPONSES));
+          setResponses(MOCK_RESPONSES);
+        }
       }
     } catch (err) {
-      console.warn('Could not load active Supabase data, using local state:', err);
-      if (questions.length === 0) setQuestions(DEFAULT_QUESTIONS);
-      if (responses.length === 0) setResponses(MOCK_RESPONSES);
+      console.warn('Could not load localStorage data, fallback to static defaults:', err);
+      setQuestions(DEFAULT_QUESTIONS);
+      setResponses(MOCK_RESPONSES);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      localStorage.removeItem('mindcare_demo_mode');
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error('Logout error:', err);
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('mindcare_admin_auth');
     }
     router.push('/admin');
   };
 
-  // CRUD Operations on Questions
+  // CRUD Operations on Questions using LocalStorage
   const handleOpenAddModal = () => {
     setEditingQuestion(null);
     setQuestionText('');
-    setQuestionCategory('Academic');
+    setQuestionCategory('Noise Level');
     setFormError('');
     setShowQuestionModal(true);
   };
@@ -194,47 +245,36 @@ export default function AdminDashboard() {
     setShowQuestionModal(true);
   };
 
-  const handleSaveQuestion = async (e: React.FormEvent) => {
+  const handleSaveQuestion = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
     if (!questionText.trim()) {
-      setFormError('Teks pertanyaan wajib diisi');
+      setFormError('Teks pernyataan wajib diisi');
       return;
     }
 
     try {
-      if (isDemo) {
-        if (editingQuestion) {
-          setQuestions(prev => prev.map(q => q.id === editingQuestion.id ? { ...q, question_text: questionText, category: questionCategory } : q));
-        } else {
-          const newQ: Question = {
-            id: `q-local-${Date.now()}`,
-            question_text: questionText,
-            category: questionCategory
-          };
-          setQuestions(prev => [...prev, newQ]);
-        }
-        setShowQuestionModal(false);
-        return;
-      }
-
+      let updatedQuestions: Question[] = [];
       if (editingQuestion) {
-        const { error } = await supabase
-          .from('questions')
-          .update({ question_text: questionText, category: questionCategory })
-          .eq('id', editingQuestion.id);
-
-        if (error) throw error;
+        updatedQuestions = questions.map(q => 
+          q.id === editingQuestion.id 
+            ? { ...q, question_text: questionText, category: questionCategory } 
+            : q
+        );
       } else {
-        const { error } = await supabase
-          .from('questions')
-          .insert({ question_text: questionText, category: questionCategory });
-
-        if (error) throw error;
+        const newQ: Question = {
+          id: `q-local-${Date.now()}`,
+          question_text: questionText,
+          category: questionCategory
+        };
+        updatedQuestions = [...questions, newQ];
       }
 
-      await refreshData();
+      setQuestions(updatedQuestions);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mindcare_questions', JSON.stringify(updatedQuestions));
+      }
       setShowQuestionModal(false);
     } catch (err: any) {
       console.error('Failed to save question:', err);
@@ -242,44 +282,30 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteQuestion = async (id: string) => {
+  const handleDeleteQuestion = (id: string) => {
     if (!confirm('Apakah Anda yakin menghapus pertanyaan ini?')) return;
 
     try {
-      if (isDemo) {
-        setQuestions(prev => prev.filter(q => q.id !== id));
-        return;
+      const updatedQuestions = questions.filter(q => q.id !== id);
+      setQuestions(updatedQuestions);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mindcare_questions', JSON.stringify(updatedQuestions));
       }
-
-      const { error } = await supabase
-        .from('questions')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      await refreshData();
     } catch (err: any) {
       console.error('Failed to delete question:', err);
       alert(err.message || 'Gagal menghapus pertanyaan.');
     }
   };
 
-  const handleDeleteResponse = async (id: string) => {
+  const handleDeleteResponse = (id: string) => {
     if (!confirm('Apakah Anda yakin menghapus riwayat skrining ini?')) return;
 
     try {
-      if (isDemo) {
-        setResponses(prev => prev.filter(r => r.id !== id));
-        return;
+      const updatedResponses = responses.filter(r => r.id !== id);
+      setResponses(updatedResponses);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mindcare_responses', JSON.stringify(updatedResponses));
       }
-
-      const { error } = await supabase
-        .from('responses')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      await refreshData();
     } catch (err: any) {
       console.error('Failed to delete response:', err);
       alert(err.message || 'Gagal menghapus data.');
@@ -292,6 +318,9 @@ export default function AdminDashboard() {
       'Nama Mahasiswa': res.student_name,
       'NIM': res.student_nim,
       'Program Studi': res.student_major,
+      'Semester': res.student_semester,
+      'Usia': res.student_age,
+      'Jenis Kelamin': res.student_gender,
       'Skor Stres': res.total_score,
       'Prediksi Tingkat Stres': res.stress_level_prediction === 'Low' ? 'Rendah' : res.stress_level_prediction === 'Moderate' ? 'Sedang' : 'Tinggi',
       'Tanggal Pengisian': new Date(res.created_at).toLocaleString('id-ID')
@@ -301,8 +330,10 @@ export default function AdminDashboard() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Hasil Skrining');
 
-    // Auto-adjust column widths
-    const maxColumnLengths = [{ wch: 25 }, { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 22 }, { wch: 25 }];
+    const maxColumnLengths = [
+      { wch: 25 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, 
+      { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 22 }, { wch: 25 }
+    ];
     worksheet['!cols'] = maxColumnLengths;
 
     XLSX.writeFile(workbook, `MindCare_Student_Stress_Log_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -321,6 +352,11 @@ export default function AdminDashboard() {
     return matchesSearch && matchesMajor && matchesStress;
   });
 
+  // Filtered Questions by aspect
+  const filteredQuestions = questions.filter(q => 
+    qAspectFilter ? q.category.toLowerCase() === qAspectFilter.toLowerCase() : true
+  );
+
   // Calculate Metrics
   const totalCount = responses.length;
   const lowCount = responses.filter(r => r.stress_level_prediction === 'Low').length;
@@ -331,11 +367,19 @@ export default function AdminDashboard() {
   const modPercent = totalCount ? Math.round((modCount / totalCount) * 100) : 0;
   const highPercent = totalCount ? Math.round((highCount / totalCount) * 100) : 0;
 
-  // Chart Data preparation (Clean palette: Slate, Zinc, Emerald)
+  // Average Age & Semester
+  const avgAge = totalCount 
+    ? (responses.reduce((sum, r) => sum + r.student_age, 0) / totalCount).toFixed(1) 
+    : 0;
+  const avgSemester = totalCount 
+    ? (responses.reduce((sum, r) => sum + r.student_semester, 0) / totalCount).toFixed(1) 
+    : 0;
+
+  // Chart Data preparation
   const stressLevelChartData = [
-    { name: 'Rendah (Low)', value: lowCount, percentage: lowPercent, color: '#10b981' }, // Emerald
-    { name: 'Sedang (Moderate)', value: modCount, percentage: modPercent, color: '#71717a' }, // Zinc-500
-    { name: 'Tinggi (High)', value: highCount, percentage: highPercent, color: '#18181b' } // Zinc-900 (High contrast)
+    { name: 'Rendah (Low)', value: lowCount, percentage: lowPercent, color: '#10b981' }, 
+    { name: 'Sedang (Moderate)', value: modCount, percentage: modPercent, color: '#71717a' }, 
+    { name: 'Tinggi (High)', value: highCount, percentage: highPercent, color: '#18181b' } 
   ];
 
   // Stress distribution per Major
@@ -351,7 +395,7 @@ export default function AdminDashboard() {
   });
 
   const majorChartData = Object.entries(majorStatsMap).map(([major, stats]) => ({
-    name: major.split(' / ')[0], // shorten the major name
+    name: major.split(' / ')[0], 
     'Stres Rendah': stats.low,
     'Stres Sedang': stats.moderate,
     'Stres Tinggi': stats.high,
@@ -362,73 +406,70 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center font-mono">
+      <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center font-mono w-full">
         <div className="w-8 h-8 border-2 border-zinc-200 border-t-zinc-900 animate-spin mb-4"></div>
-        <p className="text-zinc-500 text-xs uppercase tracking-widest">LOADING_ADMIN_DASHBOARD</p>
+        <p className="text-zinc-500 text-xs uppercase tracking-widest text-center">LOADING_ADMIN_DASHBOARD</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white text-zinc-900 font-sans flex flex-col max-w-7xl mx-auto w-full px-6 sm:px-8 py-10">
+    <div className="min-h-screen w-full bg-zinc-50 text-zinc-900 font-sans flex flex-col">
       
-      {/* Top Navbar */}
-      <header className="border-b border-zinc-150 pb-8 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-4 w-full">
-        <div>
-          <h1 className="text-3xl font-light tracking-tight text-zinc-950 flex items-center gap-3">
-            MindCare Admin Panel
-            {isDemo && (
-              <span className="text-[10px] tracking-widest uppercase px-2 py-0.5 border border-zinc-300 font-mono text-zinc-500 rounded-none bg-zinc-50">
-                demo_mode
-              </span>
-            )}
-          </h1>
-          <span className="text-xs text-zinc-400 font-mono tracking-wide mt-1 block">STATISTICS & DATA MONITORING FOR PSYCHOLOGICAL WELLNESS</span>
-        </div>
+      {/* Top Header */}
+      <header className="bg-white border-b border-zinc-200 w-full sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 py-6 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-light tracking-tight text-zinc-955 flex items-center gap-3">
+              MindCare Admin Panel
+            </h1>
+            <span className="text-[10px] text-zinc-400 font-mono tracking-wide mt-1 block">STATISTICS & DATA MONITORING FOR PSYCHOLOGICAL WELLNESS</span>
+          </div>
 
-        <div className="flex items-center gap-3 font-mono text-xs">
-          <button
-            onClick={refreshData}
-            title="Refresh Data"
-            className="p-2 border border-zinc-200 hover:border-zinc-400 text-zinc-500 hover:text-zinc-900 transition rounded-none"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1 bg-red-50 text-red-700 hover:bg-red-150 border border-red-200 hover:border-red-300 px-4 py-2 rounded-none transition"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Keluar
-          </button>
+          <div className="flex items-center gap-3 font-mono text-xs shrink-0">
+            <button
+              onClick={refreshData}
+              title="Refresh Data"
+              className="p-2 border border-zinc-255 hover:border-zinc-455 text-zinc-500 hover:text-zinc-900 transition rounded-none bg-white cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 hover:border-red-300 px-4 py-2 rounded-none transition cursor-pointer font-bold"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Keluar
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Grid: Sidebar + Dynamic Panel */}
-      <div className="flex-1 flex flex-col md:flex-row gap-10 mt-10 w-full items-start">
+      {/* Main Content Area */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-6 sm:px-8 lg:px-12 py-10 flex flex-col lg:flex-row gap-10">
         
         {/* Sidebar Nav */}
-        <aside className="w-full md:w-60 shrink-0 space-y-2">
+        <aside className="w-full lg:w-60 shrink-0 flex flex-row lg:flex-col flex-wrap lg:flex-nowrap gap-2">
           <button
             onClick={() => setActiveTab('analytics')}
-            className={`w-full py-3 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 ${
+            className={`flex-1 lg:flex-none py-3.5 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 cursor-pointer ${
               activeTab === 'analytics'
-                ? 'border-zinc-900 text-zinc-950 bg-zinc-50 font-bold'
-                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-50'
+                ? 'border-zinc-900 text-zinc-950 bg-white font-bold shadow-sm'
+                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-100'
             }`}
           >
-            <LayoutDashboard className="w-4 h-4" />
+            <LayoutDashboard className="w-4 h-4 shrink-0" />
             <span>Overview & Analisis</span>
           </button>
 
           <button
             onClick={() => setActiveTab('questions')}
-            className={`w-full py-3 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 ${
+            className={`flex-1 lg:flex-none py-3.5 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 cursor-pointer ${
               activeTab === 'questions'
-                ? 'border-zinc-900 text-zinc-950 bg-zinc-50 font-bold'
-                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-50'
+                ? 'border-zinc-900 text-zinc-950 bg-white font-bold shadow-sm'
+                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-100'
             }`}
           >
-            <HelpCircle className="w-4 h-4" />
+            <HelpCircle className="w-4 h-4 shrink-0" />
             <span>Kelola Pertanyaan</span>
             <span className="ml-auto bg-zinc-150 text-zinc-700 text-[10px] px-1.5 py-0.5 font-bold font-mono">
               {questions.length}
@@ -437,83 +478,78 @@ export default function AdminDashboard() {
 
           <button
             onClick={() => setActiveTab('responses')}
-            className={`w-full py-3 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 ${
+            className={`flex-1 lg:flex-none py-3.5 px-4 text-left font-mono text-xs tracking-wider uppercase border-l-2 transition duration-150 rounded-none flex items-center gap-2.5 cursor-pointer ${
               activeTab === 'responses'
-                ? 'border-zinc-900 text-zinc-950 bg-zinc-50 font-bold'
-                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-50'
+                ? 'border-zinc-900 text-zinc-950 bg-white font-bold shadow-sm'
+                : 'border-zinc-200 text-zinc-450 hover:text-zinc-900 hover:bg-zinc-100'
             }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-4 h-4 shrink-0" />
             <span>Data Responden</span>
             <span className="ml-auto bg-zinc-150 text-zinc-700 text-[10px] px-1.5 py-0.5 font-bold font-mono">
               {responses.length}
             </span>
           </button>
 
-          {isDemo && (
-            <div className="border border-zinc-200 bg-zinc-50 p-4 mt-8 space-y-2 text-xs font-mono text-zinc-500">
-              <span className="font-bold block text-zinc-700">Database Offline:</span>
-              <p className="leading-relaxed">Data CRUD pertanyaan & log tanggapan di dashboard tersimpan secara lokal di memori browser.</p>
-            </div>
-          )}
-
-          <div className="pt-6">
-            <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-800 transition font-mono">
+          <div className="pt-6 w-full text-center lg:text-left border-t border-zinc-200 lg:border-t-0 mt-4 lg:mt-0 font-mono text-xs">
+            <Link href="/" className="inline-flex items-center gap-1.5 text-zinc-450 hover:text-zinc-850 transition">
               <ArrowLeft className="w-3.5 h-3.5" /> Lihat Tampilan Kuesioner
             </Link>
           </div>
         </aside>
 
-        {/* Dynamic Panel Content (Anti-AI-Slop Minimalist Style) */}
+        {/* Dynamic Content Panel */}
         <main className="flex-1 min-w-0 w-full">
 
-          {/* TAB 1: ANALYTICS & VISUALIZATIONS */}
+          {/* TAB 1: OVERVIEW & ANALYTICS */}
           {activeTab === 'analytics' && (
-            <div className="space-y-10 animate-fade-in">
+            <div className="space-y-10 animate-fade-in w-full">
               
               {/* KPI Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="border border-zinc-200 p-6 bg-white rounded-none">
-                  <span className="text-zinc-450 text-[10px] font-mono uppercase tracking-wider block mb-1">Total Responden</span>
+                
+                <div className="border border-zinc-200 p-6 bg-white rounded-none space-y-2 shadow-sm">
+                  <span className="text-zinc-400 text-[10px] font-mono uppercase tracking-wider block">Total Responden</span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-light text-zinc-950 font-mono">{totalCount}</span>
+                    <span className="text-3xl font-light text-zinc-955 font-mono">{totalCount}</span>
                     <span className="text-[10px] font-mono text-zinc-400">mhs</span>
                   </div>
                 </div>
 
-                <div className="border border-zinc-200 p-6 bg-white rounded-none">
-                  <span className="text-emerald-700 text-[10px] font-mono uppercase tracking-wider block mb-1">Stres Rendah</span>
+                <div className="border border-zinc-200 p-6 bg-white rounded-none space-y-2 shadow-sm">
+                  <span className="text-zinc-400 text-[10px] font-mono uppercase tracking-wider block">Rata-rata Usia</span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-light text-emerald-600 font-mono">{lowCount}</span>
-                    <span className="text-[10px] font-mono text-emerald-500">({lowPercent}%)</span>
+                    <span className="text-3xl font-light text-zinc-955 font-mono">{avgAge}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">tahun</span>
                   </div>
                 </div>
 
-                <div className="border border-zinc-200 p-6 bg-white rounded-none">
-                  <span className="text-zinc-500 text-[10px] font-mono uppercase tracking-wider block mb-1">Stres Sedang</span>
+                <div className="border border-zinc-200 p-6 bg-white rounded-none space-y-2 shadow-sm">
+                  <span className="text-zinc-400 text-[10px] font-mono uppercase tracking-wider block">Rata-rata Semester</span>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-light text-zinc-500 font-mono">{modCount}</span>
-                    <span className="text-[10px] font-mono text-zinc-450">({modPercent}%)</span>
+                    <span className="text-3xl font-light text-zinc-500 font-mono">{avgSemester}</span>
+                    <span className="text-[10px] font-mono text-zinc-400">sem</span>
                   </div>
                 </div>
 
-                <div className="border border-zinc-950 p-6 bg-zinc-950 text-white rounded-none">
-                  <span className="text-zinc-400 text-[10px] font-mono uppercase tracking-wider block mb-1">Stres Tinggi</span>
+                <div className="border border-zinc-955 p-6 bg-zinc-955 text-white rounded-none space-y-2 shadow-sm">
+                  <span className="text-zinc-355 text-[10px] font-mono uppercase tracking-wider block">Stres Tinggi (High)</span>
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-light text-white font-mono">{highCount}</span>
                     <span className="text-[10px] font-mono text-zinc-400">({highPercent}%)</span>
                   </div>
                 </div>
+
               </div>
 
-              {/* Graphic Charts Section (Borders over shadows, thin lines) */}
+              {/* Graphic Charts Section */}
               {mounted ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
                   
-                  {/* Pie Chart */}
-                  <div className="border border-zinc-200 p-6 bg-white flex flex-col rounded-none">
+                  {/* Pie Chart Card */}
+                  <div className="border border-zinc-200 p-6 bg-white flex flex-col rounded-none lg:col-span-5 w-full shadow-sm">
                     <h3 className="font-medium text-zinc-900 text-sm font-mono tracking-tight uppercase border-b border-zinc-100 pb-3 mb-4">Distribusi Tingkat Stres</h3>
-                    <div className="h-64 w-full flex-1 min-h-[250px]">
+                    <div className="h-64 w-full min-h-[250px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -555,32 +591,32 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  {/* Context Summary */}
-                  <div className="border border-zinc-200 p-8 bg-zinc-50 flex flex-col justify-between rounded-none space-y-4">
-                    <div className="space-y-3">
-                      <h3 className="font-medium text-zinc-900 text-sm font-mono uppercase tracking-wide">Analisis Kesehatan Mental</h3>
-                      <p className="text-zinc-650 text-sm leading-relaxed">
+                  {/* Context Summary Card */}
+                  <div className="border border-zinc-200 p-8 bg-white flex flex-col justify-between rounded-none lg:col-span-7 w-full min-h-[338px] space-y-4 shadow-sm">
+                    <div className="space-y-4">
+                      <h3 className="font-medium text-zinc-900 text-sm font-mono uppercase tracking-wide border-b border-zinc-100 pb-2">Analisis Kesehatan Mental</h3>
+                      <p className="text-zinc-500 text-sm leading-relaxed">
                         Berdasarkan rekam skrining total <strong>{totalCount}</strong> mahasiswa, terdapat <strong>{highCount} ({highPercent}%)</strong> orang terindikasi memiliki skor tingkat stres tinggi. Kelompok mahasiswa ini memerlukan pendampingan konsultasi akademik atau Unit Konseling sesegera mungkin.
                       </p>
-                      <p className="text-zinc-650 text-sm leading-relaxed">
-                        Bagi mahasiswa dengan tingkat stres sedang <strong>{modCount} ({modPercent}%)</strong>, pencegahan dini seperti seminar pengelolaan kecemasan atau relaksasi mandiri sangat disarankan.
+                      <p className="text-zinc-500 text-sm leading-relaxed">
+                        Bagi mahasiswa dengan tingkat stres sedang sebanyak <strong>{modCount} ({modPercent}%)</strong>, tindakan pencegahan preventif dini (seminar relaksasi, bimbingan Dosen Wali) sangat disarankan untuk menjaga keseimbangan studi.
                       </p>
                     </div>
-                    <div className="border-t border-zinc-200 pt-4 flex gap-2 text-xs font-mono text-zinc-500">
+                    <div className="border-t border-zinc-100 pt-4 flex gap-2 text-xs font-mono text-zinc-400">
                       <AlertTriangle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      <span>Rekomendasi Tindakan: Lakukan pemetaan dan prioritaskan konseling bagi program studi dengan jumlah beban stres tinggi.</span>
+                      <span>Rekomendasi Tindakan: Lakukan pemetaan dan prioritaskan konseling bagi program studi dengan persentase beban stres tinggi.</span>
                     </div>
                   </div>
 
                   {/* Stacked Bar Chart */}
-                  <div className="border border-zinc-200 p-6 bg-white col-span-1 lg:col-span-2 rounded-none">
+                  <div className="border border-zinc-200 p-6 bg-white rounded-none lg:col-span-12 w-full shadow-sm">
                     <h3 className="font-medium text-zinc-900 text-sm font-mono tracking-tight uppercase border-b border-zinc-100 pb-3 mb-4">Grafik Beban Stres per Program Studi</h3>
                     <div className="h-80 w-full min-h-[300px]">
                       {majorChartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
                             data={majorChartData}
-                            margin={{ top: 20, right: 10, left: 0, bottom: 10 }}
+                            margin={{ top: 20, right: 10, left: -20, bottom: 10 }}
                             barGap={2}
                           >
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
@@ -627,73 +663,91 @@ export default function AdminDashboard() {
 
           {/* TAB 2: QUESTIONS CRUD */}
           {activeTab === 'questions' && (
-            <div className="border border-zinc-200 p-6 bg-white space-y-6 rounded-none animate-fade-in">
+            <div className="border border-zinc-200 p-6 bg-white space-y-6 rounded-none animate-fade-in w-full shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-zinc-150 pb-4">
                 <div className="space-y-1">
                   <h2 className="text-xl font-normal text-zinc-950 tracking-tight">Kelola Butir Kuesioner</h2>
-                  <p className="text-zinc-500 text-xs font-mono uppercase">Menyunting instrumen pengukuran tingkat stres</p>
+                  <p className="text-zinc-500 text-xs font-mono uppercase">Menyunting 15 aspek instrumen kuesioner</p>
                 </div>
-                <button
-                  onClick={handleOpenAddModal}
-                  className="bg-zinc-900 hover:bg-zinc-800 text-white font-medium py-2.5 px-4 rounded-none text-xs font-mono transition"
-                >
-                  <Plus className="w-3.5 h-3.5 inline mr-1" /> TAMBAH_PERTANYAAN
-                </button>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={qAspectFilter}
+                    onChange={e => setQAspectFilter(e.target.value)}
+                    className="py-2 px-3 bg-white border border-zinc-200 text-xs focus:border-zinc-900 focus:outline-none rounded-none text-zinc-700 font-mono"
+                  >
+                    <option value="">[SEMUA ASPEK]</option>
+                    {CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={handleOpenAddModal}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-white font-medium py-2.5 px-4 rounded-none text-xs font-mono transition shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 inline mr-1" /> TAMBAH_PERTANYAAN
+                  </button>
+                </div>
               </div>
 
               {/* Questions List */}
               <div className="divide-y divide-zinc-200 border border-zinc-200 bg-white">
-                {questions.map((q, i) => (
-                  <div key={q.id} className="p-5 flex items-start justify-between gap-4 hover:bg-zinc-50/50 transition">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-mono text-xs text-zinc-400 font-bold bg-zinc-100 px-2 py-0.5">
-                          #{i + 1}
-                        </span>
-                        <span className="font-mono text-[10px] tracking-wider font-bold bg-zinc-900 text-white px-2 py-0.5 uppercase">
-                          {q.category === 'Academic' ? 'Akademik' :
-                           q.category === 'Financial' ? 'Finansial' :
-                           q.category === 'Social' ? 'Sosial' : 'Personal'}
-                        </span>
+                {filteredQuestions.length > 0 ? (
+                  filteredQuestions.map((q, i) => (
+                    <div key={q.id} className="p-5 flex items-start justify-between gap-4 hover:bg-zinc-50/50 transition">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs text-zinc-400 font-bold bg-zinc-100 px-2 py-0.5">
+                            #{i + 1}
+                          </span>
+                          <span className="font-mono text-[10px] tracking-wider font-bold bg-zinc-900 text-white px-2 py-0.5 uppercase">
+                            {q.category}
+                          </span>
+                        </div>
+                        <p className="text-zinc-850 text-sm font-medium leading-relaxed">
+                          "{q.question_text}"
+                        </p>
                       </div>
-                      <p className="text-zinc-850 text-sm font-medium leading-relaxed">
-                        "{q.question_text}"
-                      </p>
-                    </div>
 
-                    <div className="flex gap-2 font-mono text-xs">
-                      <button
-                        onClick={() => handleOpenEditModal(q)}
-                        className="p-2 border border-zinc-250 hover:border-zinc-900 text-zinc-600 hover:text-zinc-950 transition"
-                        title="Ubah"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteQuestion(q.id)}
-                        className="p-2 border border-red-200 hover:border-red-650 hover:bg-red-50 text-red-600 hover:text-red-700 transition"
-                        title="Hapus"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex gap-2 font-mono text-xs shrink-0">
+                        <button
+                          onClick={() => handleOpenEditModal(q)}
+                          className="p-2 border border-zinc-200 hover:border-zinc-900 text-zinc-500 hover:text-zinc-950 transition cursor-pointer"
+                          title="Ubah"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteQuestion(q.id)}
+                          className="p-2 border border-red-200 hover:border-red-650 hover:bg-red-50 text-red-600 hover:text-red-700 transition cursor-pointer"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-zinc-450 font-mono text-xs">
+                    TIDAK_ADA_PERTANYAAN_ASPEK_INI
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 3: RESPONSES LIST & EXPORT */}
+          {/* TAB 3: RESPONSES LOG */}
           {activeTab === 'responses' && (
-            <div className="border border-zinc-200 p-6 bg-white space-y-6 rounded-none animate-fade-in">
+            <div className="border border-zinc-200 p-6 bg-white space-y-6 rounded-none animate-fade-in w-full shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-zinc-150 pb-4">
                 <div className="space-y-1">
-                  <h2 className="text-xl font-normal text-zinc-950 tracking-tight">Data Log Hasil Diagnosis</h2>
-                  <p className="text-zinc-500 text-xs font-mono uppercase">Riwayat skrining mahasiswa terdaftar</p>
+                  <h2 className="text-xl font-normal text-zinc-955 tracking-tight">Data Log Hasil Diagnosis</h2>
+                  <p className="text-zinc-500 text-xs font-mono uppercase">Riwayat asesmen mahasiswa terdaftar</p>
                 </div>
                 <button
                   onClick={handleExportExcel}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 px-4 rounded-none text-xs font-mono transition"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 px-4 rounded-none text-xs font-mono transition shrink-0 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5 inline mr-1" /> EXPORT_EXCEL
                 </button>
@@ -737,13 +791,15 @@ export default function AdminDashboard() {
                 </select>
               </div>
 
-              {/* Table responses log */}
-              <div className="overflow-x-auto border border-zinc-200">
-                <table className="min-w-full divide-y divide-zinc-200 text-left text-sm font-sans">
+              {/* Table Responses Log */}
+              <div className="overflow-x-auto border border-zinc-200 w-full">
+                <table className="min-w-full divide-y divide-zinc-200 text-left text-sm min-w-[800px]">
                   <thead className="bg-zinc-50 text-zinc-500 text-xs font-mono uppercase">
                     <tr>
                       <th className="px-5 py-3 border-b border-zinc-200">Nama / NIM</th>
                       <th className="px-5 py-3 border-b border-zinc-200">Jurusan</th>
+                      <th className="px-5 py-3 border-b border-zinc-200 text-center">Sem / Usia</th>
+                      <th className="px-5 py-3 border-b border-zinc-200 text-center">Gender</th>
                       <th className="px-5 py-3 border-b border-zinc-200 text-center">Skor</th>
                       <th className="px-5 py-3 border-b border-zinc-200 text-center">Prediksi Stres</th>
                       <th className="px-5 py-3 border-b border-zinc-200">Tanggal</th>
@@ -754,12 +810,20 @@ export default function AdminDashboard() {
                     {filteredResponses.length > 0 ? (
                       filteredResponses.map(res => (
                         <tr key={res.id} className="hover:bg-zinc-50/50 transition">
-                          <td className="px-5 py-4">
+                          <td className="px-5 py-4 whitespace-nowrap">
                             <span className="block font-bold text-zinc-900">{res.student_name}</span>
                             <span className="block text-[10px] text-zinc-400 font-mono mt-0.5">{res.student_nim}</span>
                           </td>
-                          <td className="px-5 py-4 text-zinc-500">
+                          <td className="px-5 py-4 text-zinc-500 max-w-[200px] truncate" title={res.student_major}>
                             {res.student_major}
+                          </td>
+                          <td className="px-5 py-4 text-center font-mono whitespace-nowrap">
+                            <span>S{res.student_semester}</span>
+                            <span className="text-zinc-400 mx-1">/</span>
+                            <span>{res.student_age} th</span>
+                          </td>
+                          <td className="px-5 py-4 text-center whitespace-nowrap">
+                            {res.student_gender}
                           </td>
                           <td className="px-5 py-4 text-center font-mono font-bold text-zinc-700">
                             {res.total_score}
@@ -767,20 +831,20 @@ export default function AdminDashboard() {
                           <td className="px-5 py-4 text-center whitespace-nowrap">
                             <span className={`inline-block px-2.5 py-1 text-[10px] uppercase font-mono font-bold border rounded-none ${
                               res.stress_level_prediction === 'Low' ? 'border-emerald-250 bg-emerald-50 text-emerald-800' :
-                              res.stress_level_prediction === 'Moderate' ? 'border-zinc-250 bg-zinc-50 text-zinc-700' :
+                              res.stress_level_prediction === 'Moderate' ? 'border-zinc-250 bg-zinc-50 text-zinc-750' :
                               'border-zinc-950 bg-zinc-950 text-white'
                             }`}>
                               {res.stress_level_prediction === 'Low' ? 'Rendah' :
                                res.stress_level_prediction === 'Moderate' ? 'Sedang' : 'Tinggi'}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-zinc-400 font-mono">
+                          <td className="px-5 py-4 text-zinc-400 font-mono whitespace-nowrap">
                             {new Date(res.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
                           </td>
-                          <td className="px-5 py-4 text-center">
+                          <td className="px-5 py-4 text-center whitespace-nowrap">
                             <button
                               onClick={() => handleDeleteResponse(res.id)}
-                              className="p-1 border border-zinc-200 hover:border-red-650 hover:bg-red-50 text-zinc-400 hover:text-red-700 transition"
+                              className="p-1 border border-zinc-200 hover:border-red-650 hover:bg-red-50 text-zinc-400 hover:text-red-700 transition cursor-pointer"
                               title="Hapus Log"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -790,7 +854,7 @@ export default function AdminDashboard() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={6} className="px-5 py-8 text-center text-zinc-400 font-mono">
+                        <td colSpan={8} className="px-5 py-8 text-center text-zinc-400 font-mono">
                           NO_RESPONDENTS_FOUND
                         </td>
                       </tr>
@@ -804,16 +868,16 @@ export default function AdminDashboard() {
         </main>
       </div>
 
-      {/* QUESTION MODAL (minimal border styling) */}
+      {/* QUESTION MODAL */}
       {showQuestionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-none">
-          <div className="bg-white border border-zinc-350 max-w-lg w-full p-8 animate-scale-up space-y-4 rounded-none">
-            <h3 className="text-xl font-normal text-zinc-950 tracking-tight">
+          <div className="bg-white border border-zinc-350 max-w-lg w-full p-8 animate-scale-up space-y-4 rounded-none shadow-xl">
+            <h3 className="text-xl font-normal text-zinc-955 tracking-tight">
               {editingQuestion ? 'Edit Butir Pertanyaan' : 'Tambah Pertanyaan Baru'}
             </h3>
 
             {formError && (
-              <div className="border border-red-200 bg-red-50 text-red-700 p-3 text-xs font-mono flex items-center gap-2">
+              <div className="border border-red-200 bg-red-55 text-red-705 p-3 text-xs font-mono flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-red-550 shrink-0" />
                 <span>{formError}</span>
               </div>
@@ -824,13 +888,12 @@ export default function AdminDashboard() {
                 <label className="block text-xs font-mono text-zinc-500 uppercase">Kategori Aspek</label>
                 <select
                   value={questionCategory}
-                  onChange={e => setQuestionCategory(e.target.value as any)}
+                  onChange={e => setQuestionCategory(e.target.value)}
                   className="w-full py-2.5 px-3 border border-zinc-200 rounded-none text-xs focus:outline-none focus:border-zinc-900 bg-white text-zinc-700"
                 >
-                  <option value="Academic">Akademik</option>
-                  <option value="Financial">Finansial</option>
-                  <option value="Social">Sosial</option>
-                  <option value="Personal">Personal</option>
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                 </select>
               </div>
 
@@ -840,7 +903,7 @@ export default function AdminDashboard() {
                   rows={4}
                   value={questionText}
                   onChange={e => setQuestionText(e.target.value)}
-                  placeholder="Butir pernyataan Likert (skala 1-5)"
+                  placeholder="Masukkan pernyataan Likert"
                   className="w-full py-2.5 px-3 border border-zinc-200 rounded-none text-xs focus:outline-none focus:border-zinc-900 bg-white text-zinc-800 placeholder-zinc-400"
                 ></textarea>
               </div>
@@ -849,13 +912,13 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setShowQuestionModal(false)}
-                  className="px-4 py-2 border border-zinc-200 rounded-none hover:border-zinc-400 text-zinc-650 transition"
+                  className="px-4 py-2 border border-zinc-200 rounded-none hover:border-zinc-400 text-zinc-650 transition cursor-pointer"
                 >
                   BATAL
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-none transition"
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-850 text-white rounded-none transition cursor-pointer"
                 >
                   SIMPAN
                 </button>
